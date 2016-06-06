@@ -1068,9 +1068,7 @@ l_module.start = function (config, onDone) {
 			return;
 		}
 		l_reconnectDevices();	
-	});
-	
-	UTIL.safeCall(onDone);
+	});	
 }
 
 
