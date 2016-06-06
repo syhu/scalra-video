@@ -1,4 +1,4 @@
-[submodule "Broadway"]
+[submodule "lib/Broadway"]
 	path = lib/Broadway
 	url = https://github.com/sunnyworm/Broadway
 	branch = umd
