@@ -1,0 +1,26 @@
+{
+  "name": "scalra-video",
+  "version": "1.0.0",
+  "description": "video module for the scalra framework",
+  "main": "index.js",
+  "scripts": {
+    "test": "node test/*.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/imonology/scalra-video.git"
+  },
+  "keywords": [
+    "video",
+    "streaming"
+  ],
+  "author": "Imonology Inc. (dev@imonology.com)",
+  "license": "AGPL-3.0",
+  "bugs": {
+    "url": "https://github.com/imonology/scalra-video/issues"
+  },
+  "homepage": "https://github.com/imonology/scalra-video",
+  "dependencies": {
+    "kurento-client": "^6.5.0"
+  }
+}
