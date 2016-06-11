@@ -156,10 +156,13 @@ CStream.prototype.init = function (onDone) {
 //	returns basic stream info in l_streamInfo
 
 CStream.prototype.new = function (args, onDone) {
+
+	LOG.warn("CStream.new", l_name);
 	
 	//  create a new stream and store into l_streamInfo
-	if (!l_dbLoaded)
+	if (!l_dbLoaded) {
 		return UTIL.safeCall(onDone, "SR.Video.Stream.new DB not yet loaded, please wait");
+	}
 	
 	// basic info
 	var obj = undefined;
@@ -170,23 +173,27 @@ CStream.prototype.new = function (args, onDone) {
 			url: args,
 			type: "IPCAM"
 		};
+	} else {
+		obj = args;		
 	}
-	else
-		obj = args;
 		
 	// check for invalid object
-	if (typeof(obj) !== "object" || typeof obj.type !== 'string' || typeof obj.url !== 'string')
+	if (typeof(obj) !== "object" || typeof obj.type !== 'string' || typeof obj.url !== 'string') {
 		return UTIL.safeCall(onDone, 'invalid input when creating stream');
+	}
 		
 	// ensure no spaces around URL
 	obj.url = obj.url.trim();
 		
 	// check for redundancy (based on URL) with existing streams
 	// TODO: treat lower/upper case the same?
-	for (var i=0; i < l_streamInfo.length; i++) {
+	for (var i = 0; i < l_streamInfo.length; i++) {
 		if (l_streamInfo[i].type === obj.type && l_streamInfo[i].url === obj.url) {
+			obj.url += "#dup";
+						
 			LOG.warn('stream already exists, type: ' + obj.type + ' url: ' + obj.url, l_name);
-			return UTIL.safeCall(onDone, undefined, l_streamInfo[i]);
+			// LOG.warn("url: " + args + " -> " + obj.url);
+			// return UTIL.safeCall(onDone, undefined, l_streamInfo[i]);
 		}
 	}
 	
@@ -207,7 +214,7 @@ CStream.prototype.new = function (args, onDone) {
 	l_saveDB(function () {
 		// right now we automatically enable the stream
 		// TODO: should allow app server to enable?
-		SR.Video.Stream.enable(obj.vid, onDone);	
+		SR.Video.Stream.enable(obj.vid, onDone);
 	});
 };
 
@@ -392,6 +399,7 @@ CStream.prototype.disable = function (vid, onDone) {
 //	}
 
 CStream.prototype.start = function (args, onDone) {
+	LOG.warn("CStream.start");
 		
 	var that = this;
 	var vid = args.vid;
@@ -437,9 +445,15 @@ CStream.prototype.start = function (args, onDone) {
 				result = l_vid2streamID[vid][streamID];
 			}
 		}
-		
+
+		// TODO: check if we need to catch error here?
 		// NOTE: result here is an sdpAnswer object for Kurento
-		UTIL.safeCall(onDone, err, streamID, result, obj);	
+		try {
+			UTIL.safeCall(onDone, err, streamID, result, obj);
+		} catch (e) {
+			LOG.error("onConnected error");
+			LOG.error(e);
+		}
 	}
 
 	// check whether this is the first start request (init connection to streaming source)
@@ -475,20 +489,36 @@ CStream.prototype.start = function (args, onDone) {
 					"width": resolution_string.split("x")[0].split(" ")[resolution_string.split("x")[0].split(" ").length - 1],
 					"height": resolution_string.split("x")[1].split(",")[0]
 				}
-			}	
-			catch (err) {
+			} catch (err) {
 				LOG.error(err, l_name);
+				
+				// default resolution to 1280p
+				// TODO: check if this is definitely true
+				resolution = {
+					"width": "1280",
+					"height": "720"
+				}
 			}
 		}
 		
 		LOG.warn("pipeline is Broadway, resolution: " + obj.resolution + ' dimension: ' + resolution);
 		
 		var method = (obj.resolution === 'High' ? 'broadway-high-res' : 'broadway');
+
+		try {
 		
-		// attach to source
-		streamObj.recorder.attach({method: method, channel: vid}, function (err) {
-			UTIL.safeCall(onConnected, err, resolution);
-		});
+			// attach to source
+			streamObj.recorder.attach({method: method, channel: vid}, function (err) {
+				if (err) {
+					LOG.error(err);
+				}
+				
+				UTIL.safeCall(onConnected, err, resolution);
+			});
+		} catch (e) {
+			LOG.error("recorder attach error");
+			LOG.error(e);
+		}
 	}
 	else if (obj.pipeline === 'Kurento') {
 		
@@ -604,7 +634,9 @@ CStream.prototype.pause = function (streamID, onDone) {
 	var vid = l_getVID(streamID);
 
 	if (!vid || l_streamObjects.hasOwnProperty(vid) === false || !l_streamObjects[vid].recorder) {
-		return UTIL.safeCall(onDone, 'cannot find valid video object for streamID [' + streamID + ']');
+		var errmsg = 'cannot find valid video object for streamID [' + streamID + ']';
+		LOG.error(errmsg, l_name);
+		return UTIL.safeCall(onDone, errmsg);
 	}
 	
 	LOG.sys('checking whether to pause/unpause vid: ' + vid);
@@ -627,7 +659,9 @@ CStream.prototype.unpause = function (streamID, onDone) {
 	var vid = l_getVID(streamID);
 
 	if (!vid || l_streamObjects.hasOwnProperty(vid) === false || !l_streamObjects[vid].recorder) {
-		return UTIL.safeCall(onDone, 'cannot find valid video object for streamID [' + streamID + ']');
+		var errmsg = 'cannot find valid video object for streamID [' + streamID + ']';
+		LOG.error(errmsg, l_name);
+		return UTIL.safeCall(onDone, errmsg);
 	}
 	
 	LOG.sys('checking whether to pause/unpause vid: ' + vid);
@@ -829,19 +863,30 @@ l_handlers.Stream_start = function (event) {
 	// NOTE: l_conn2streamID is handled/maintained here instead of inside the Stream.start API 
 	// TODO: move l_conn2streamID handling inside the Stream.start API?
 	SR.Video.Stream.start(event.data, function (err, streamID, result, obj) {
-		
+
+		LOG.warn("SR.Video.Stream.start event.data:", l_name);
+		LOG.warn(event.data, l_name);
+	
 		if (err) {
+			LOG.error("SR.Video.Stream.start error", l_name);			
 			LOG.error(err, l_name);
 			return event.done({error: err});
 		}
 						
 		// record connID -> streamID mapping if stream start is successful
 		if (l_conn2streamID.hasOwnProperty(connID) === false) {
+			LOG.error("l_conn2streamID.hasOwnProperty(connID)");
+			LOG.error(l_conn2streamID.hasOwnProperty(connID));
+			
 			l_conn2streamID[connID] = {};
 		}
 		
 		l_conn2streamID[connID][streamID] = event.data.vid;
 
+		LOG.warn("l_conn2streamID[connID][streamID]");
+		LOG.warn(l_conn2streamID[connID][streamID]);
+		
+		
 		// returns a unique streamID to client
 		event.done({error: err, streamID: streamID, result: result});		
 		
@@ -859,13 +904,17 @@ l_handlers.Stream_start = function (event) {
 			
 			// skip self and pause/unpause all else
 			if (stream_id === streamID) {
+				// SR.Video.Stream.unpause(stream_id);				
 				continue;
 			}
 
-			if (to_pause)
+			if (to_pause) {
+				LOG.warn("pause");
 				SR.Video.Stream.pause(stream_id);
-			else
-				SR.Video.Stream.unpause(stream_id);			
+			} else {
+				LOG.warn("unpause");
+				SR.Video.Stream.unpause(stream_id);
+			}
 		}
 	});
 }
@@ -1070,9 +1119,6 @@ l_module.start = function (config, onDone) {
 		l_reconnectDevices();	
 	});	
 }
-
-
-
 
 // module shutdown
 l_module.stop = function (onDone) {

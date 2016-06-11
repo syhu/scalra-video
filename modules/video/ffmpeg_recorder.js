@@ -14,7 +14,7 @@ var l_getPara = function (that, args) {
 		
 		hub: [
 			'-y', 
-			'-i', that.rtsp_url, 
+			'-i', that.rtsp_url.split('#')[0],
 			'-vcodec','copy',
 			'-acodec','copy',
 			'-f', 
@@ -93,6 +93,12 @@ var l_getPara = function (that, args) {
 		],
 		
 		rtsp_low: [
+/*			'-loglevel', 'debug',
+			'-vsync', 'passthrough',
+			'-frame_drop_threshold', '4',
+			'-rtsp_transport', 'tcp',
+			'-i', that.rtsp_url.split('#')[0],
+*/			
 			'-pix_fmt', 'yuv420p',
 			'-map','0',
 			'-preset', 'ultrafast',
@@ -101,10 +107,10 @@ var l_getPara = function (that, args) {
 			'-x264opts', 'crf=23:vbv-maxrate=10000:vbv-bufsize=10000:intra-refresh=1:slice-max-size=36000:keyint=30:ref=1',
 			'-pass', '1',
 			'-bf', '0',
-			'-flags',
-			'-loop',
+			'-flags', '+loop',
 			'-wpredp', '0',
 			'-an',
+			'-vf', 'drawtext=fontfile=/usr/share/fonts/truetype/droid/DroidSans-Bold.ttf: text=%{localtime\}: fontcolor=yellow@1: x=10: y=10',
 			'-vf', 'scale=176:120',
 			'-f', 'h264',
 			'-',
@@ -112,8 +118,8 @@ var l_getPara = function (that, args) {
 		],
 		
 		stdin_ffserver: [
-			'-pix_fmt', 'yuv420p', 
-			'-map', '0', 
+			'-pix_fmt', 'yuv420p',
+			'-map', '0',
 			'-preset', 'ultrafast',
 			'-tune', 'zerolatency',
 			// '-profile:v', 'baseline',
@@ -124,8 +130,8 @@ var l_getPara = function (that, args) {
 			'-loop',
 			'-wpredp', '0',
 			'-an',
-			//'-y', 		
-			//'-isync', 
+			//'-y',
+			//'-isync',
 			//'-vcodec', 'copy',
 			//'-level', '3.0',
 			args.ffm_url || that.ffserver_ffm,
@@ -155,7 +161,7 @@ var l_getPara = function (that, args) {
 //			save_path,
 			'-metadata','comment="file stdin"'
 		],
-		
+
 		rtsp_file: [
 			'-vcodec', 'copy', '-acodec', 'copy',
 			'-segment_time', args.segment_time || that.segment_time,
@@ -165,7 +171,7 @@ var l_getPara = function (that, args) {
 			'-reset_timestamps','1',
 //			save_path,
 			'-metadata','comment="file"'
-		]	
+		]
 	}
 }
 
@@ -184,8 +190,8 @@ var l_getPara = function (that, args) {
 
 function ffrec (args) {
 	
-	// NOTE: variable 'that' must sit within this function (not outside of), otherwise it will become a 
-	//		 singleton variable (globally there's only ONE copy), which will cause problems 
+	// NOTE: variable 'that' must sit within this function (not outside of), otherwise it will become a
+	//		 singleton variable (globally there's only ONE copy), which will cause problems
 	//		 when there are many instances of ffrec
 	var that = this;
 	var self = this;
@@ -200,8 +206,9 @@ function ffrec (args) {
 	} else {
 		
 		// convert 'stdin' to ffmpeg internal parameter
-		if (args.rtsp_url === 'stdin')
+		if (args.rtsp_url === 'stdin') {
 			args.rtsp_url = 'pipe:0';
+		}
 
 		that.rtsp_url = args.rtsp_url || 'pipe:0';
 	}
@@ -228,7 +235,7 @@ function ffrec (args) {
 
 	that.received_message_previous = 0;
 	that.received_message_current = 1;
-	setInterval(function(){
+	setInterval(function() {
 		//console.log("current_length:" + that.received_message_current + " previous:" + that.received_message_previous);
 		if (that.received_message_previous === that.received_message_current) {
 			LOG.error("video timeout: " + that.video_id + " " + that.resolution + " " + that.rtsp_url);
@@ -238,23 +245,34 @@ function ffrec (args) {
 		}
 	}, 30 * 1000);
 	
-	that.ffmpeg_hub.stdout.on('data', function (data, encoding){
+	that.ffmpeg_hub.stdout.on('data', function (data, encoding) {
+		that.received_message_current += data.length;
 
-		that.received_message_current =+ data.length;
+		encoding = encoding || 'binary';
 
 		// NOTE: pause flag does not affect file recording
 		if (that.ffmpeg_attach_file && that.ffmpeg_attach_file.stdin.writable) {
-			that.ffmpeg_attach_file.stdin.write(data, encoding);
+			try {
+				that.ffmpeg_attach_file.stdin.write(data, encoding);
+			} catch (e) {
+				LOG.error("attach_file stdin.write fail");
+				LOG.error(e);
+			}
 		}
 		if (!that.paused && that.ffmpeg_attach_broadway && that.ffmpeg_attach_broadway.stdin.writable) {
-			that.ffmpeg_attach_broadway.stdin.write(data, encoding);
+			try {
+				that.ffmpeg_attach_broadway.stdin.write(data, encoding);
+			} catch (e) {
+				LOG.error("attach_broadway stdin.write fail");
+				LOG.error(e);
+			}
 		}
 		if (!that.paused && that.ffmpeg_attach_ffserver && that.ffmpeg_attach_ffserver.stdin.writable) {
 			that.ffmpeg_attach_ffserver.stdin.write(data, encoding);
 		}
 	});
-	
-	that.ffmpeg_hub.stderr.on('data', function(data){
+
+	that.ffmpeg_hub.stderr.on('data', function (data) {
 		// fs.appendFile('/tmp/ffhub.log', data, function(){});
 	});
 	
@@ -272,15 +290,13 @@ function ffrec (args) {
 	//////////////////////////////////////////////////// broadway pipelines
 	var attach_ffmpeg_args = ['-y', '-loglevel', 'debug', '-i', 'pipe:0'];
 
-	LOG.warn("URL:" + this.rtsp_url);
-
 	if (args.resolution === 'High') {
 		LOG.warn("spawning high-res broadway");
 
 		try {
 			if (this.rtsp_url === 'pipe:0') {
 				this.ffmpeg_attach_broadway = child_process.spawn('ffmpeg', attach_ffmpeg_args.concat(that.ffmpeg_para['stdin_high']));
-			} else {					
+			} else {
 				this.ffmpeg_attach_broadway = child_process.spawn('ffmpeg', attach_ffmpeg_args.concat(that.ffmpeg_para['rtsp_high']));
 			}
 			
@@ -290,8 +306,7 @@ function ffrec (args) {
 	}
 
 	if (args.resolution === 'Low') {
-		LOG.warn("spawning low-res broadway");
-		
+
 		if (this.rtsp_url === 'pipe:0') {
 			this.ffmpeg_attach_broadway = child_process.spawn('ffmpeg', attach_ffmpeg_args.concat(that.ffmpeg_para['stdin_low']));
 		} else {
@@ -311,14 +326,20 @@ function ffrec (args) {
 	});
 	
 	this.ffmpeg_attach_broadway.stderr.on('error', function (err) {
-		// console.log(err);
+		// LOG.warn("attach_broadway stderr error");
+		// LOG.error(err.toString());
 	});
 	
-	this.ffmpeg_attach_broadway.stderr.on('data', function (err) {
+	this.ffmpeg_attach_broadway.stderr.on('data', function (data) {
+		// LOG.warn("attach_broadway stderr data");
+		// LOG.warn(data.toString());
 		// console.log(err);
 	});
 	
 	this.ffmpeg_attach_broadway.on('close', function (code) {
+		LOG.warn("attach_broadway close ");
+		LOG.warn(code);
+		
 		if (typeof(this.close_callback) === 'function') {
 			this.close_callback('broadway');
 			delete this.ffmpeg_attach_broadway;
@@ -331,38 +352,38 @@ function ffrec (args) {
 
 ffrec.prototype.on = function (type, callback) {
 
-	switch(type){
+	switch(type) {
 	case 'info':
 		if (typeof(callback) === 'function') {
 			this.info_callback = callback;
 		}
-	break;
+		break;
 	case 'segment_start':
 		if (typeof(callback) === 'function') {
 			this.segment_start_callback = callback;
 			//console.log("reg start seg");
 		}
-	break;
+		break;
 	case 'segment_end':
 		if (typeof(callback) === 'function') {
 			this.segment_end_callback = callback;
 			//console.log("reg end seg");
 		}
-	break;
+		break;
 	case 'stdout':
 		if (typeof(callback) === 'function') {
 			this.stdout_callback = callback;
 			//console.log("reg close");
 		}
-	break;
+		break;
 	case 'close':
 		if (typeof(callback) === 'function') {
 			this.close_callback = callback;
 			//console.log("reg close");
 		}
-	break;
+		break;
 	default:
-	break;
+		break;
 	}
 }
 
@@ -377,13 +398,13 @@ ffrec.prototype.close = function () {
 	
 		if (this.ffmpeg_hub) {
 			this.ffmpeg_hub.stdin.pause();
-			process.kill(this.ffmpeg_hub.pid, "SIGHUP");		
+			process.kill(this.ffmpeg_hub.pid, "SIGHUP");
 		}
 	
 		if (this.ffmpeg_attach_broadway) {
 			this.ffmpeg_attach_broadway.stdin.pause();
-			process.kill(this.ffmpeg_attach_broadway.pid, "SIGHUP");
-		}		
+				process.kill(this.ffmpeg_attach_broadway.pid, "SIGHUP");
+		}
 	
 		if (this.ffmpeg_attach_ffserver) {	
 			this.ffmpeg_attach_ffserver.stdin.pause();
@@ -400,8 +421,9 @@ ffrec.prototype.close = function () {
 }
 
 ffrec.prototype.stdinWrite = function (data, encoding) {
-	if (this.ffmpeg_hub && typeof(this.ffmpeg_hub.stdin.write) === 'function')
+	if (this.ffmpeg_hub && typeof(this.ffmpeg_hub.stdin.write) === 'function') {
 		this.ffmpeg_hub.stdin.write(data, encoding);
+	}
 }
 
 
@@ -459,8 +481,11 @@ ffrec.prototype.attach = function (args, onDone) {
 	case 'file':
 		LOG.warn("attaching file:");
 		var that = this;
-		var save_path = path.resolve(args.dir, args.filename_prefix + '%07d.mp4');	
-		var snapshot = ['-r','2','-f', 'image2', path.resolve(args.dir, args.filename_prefix + 'snapshot%07d.jpg')];
+		var save_path = path.resolve(args.dir, args.filename_prefix + '%07d.mp4');
+		var snapshot = ['-r','2', '-vf', 'fps=1', '-compression_level', '0', '-preset', 'ultrafast', '-tune', 'zerolatency', path.resolve(args.dir, args.filename_prefix + 'snapshot%07d.png')];
+		// var snapshot = ['-r','2','-vf', 'fps=1', path.resolve(args.dir, args.filename_prefix + 'snapshot%07d.png')];
+		// var snapshot = [];
+
 		
 		if (!this.info) {
 			this.info = {};
@@ -474,16 +499,31 @@ ffrec.prototype.attach = function (args, onDone) {
 
 		this.snapshot_queue = [];
 		fs.watch(args.dir, {presistent: true, recursive: true}, function (event, filename) {
-			if (event === 'rename') return;
-			if (filename.match(/.*jpg$/i)) {
-				if (that.snapshot_queue[that.snapshot_queue.length-1] != filename) {
-					that.snapshot_queue.push(path.resolve(args.dir,filename));
+			if (filename.match(/.*png$/i)) {
+				if (that.snapshot_queue.length == 0) {
+
+					that.snapshot_queue.push(path.resolve(args.dir, filename));
+					LOG.warn(that.snapshot_queue);
+
+				} else if (that.snapshot_queue[that.snapshot_queue.length-1] !== path.resolve(args.dir, filename)) {
+
+					LOG.warn("that.snapshot_queue[that.snapshot_queue.length-1]");
+					LOG.warn(that.snapshot_queue[that.snapshot_queue.length-1]);
+					LOG.warn("filename");
+					LOG.warn(filename);
+
+					that.snapshot_queue.push(path.resolve(args.dir, filename));
 				}
-				if (that.snapshot_queue.length >11) {
+				if (that.snapshot_queue.length > 11) {
+					LOG.warn(that.snapshot_queue);
 					var knock_out = that.snapshot_queue.shift();
 					fs.stat(knock_out, function (err, stat) {
 						if (!err) {
-							fs.unlink(knock_out);
+							try {
+								fs.unlink(knock_out);
+							} catch (e) {
+								// LOG.error(e);
+							}
 						}
 					});
 				}
@@ -498,7 +538,11 @@ ffrec.prototype.attach = function (args, onDone) {
 				if (err) return;
 				var mtime = new Date(stat.mtime);
 				if (mtime < new Date(new Date() - 1*60000)) {
-					fs.unlink(path.resolve(args.dir, filename));
+					try {
+						fs.unlink(path.resolve(args.dir, filename));
+					} catch (e) {
+						// LOG.error(err);
+					}
 				} else {
 				}
 			});
@@ -508,7 +552,7 @@ ffrec.prototype.attach = function (args, onDone) {
 			if (err) return;
 			for (var i in files) {
 				var filename = files[i].slice(0);
-				if (filename.match(/.*jpg$/i)) {
+				if (filename.match(/.*png$/i)) {
 					del_old_snapshot(filename);
 				}
 			}
@@ -550,8 +594,7 @@ ffrec.prototype.attach = function (args, onDone) {
 							UTIL.safeCall(that.segment_start_callback, UTIL.parsePath(stde));
 						}
 						that.previous_start = stde;
-					}
-					else if (stderr[i].indexOf('ended') > -1) {
+					} else if (stderr[i].indexOf('ended') > -1) {
 						if (that.previous_end != stde) {
 							UTIL.safeCall(that.segment_end_callback, UTIL.parsePath(stde));
 						}
@@ -559,8 +602,12 @@ ffrec.prototype.attach = function (args, onDone) {
 					}
 				}
 			}
-
 		});
+			
+		this.ffmpeg_attach_file.stderr.on('error', function (data) {
+			// LOG.error(data.toString());
+		});
+			
 		this.ffmpeg_attach_file.on('close', function(code) {
 			if (this.close_callback && typeof(this.close_callback) === 'function') {
 				this.close_callback('recorder');
