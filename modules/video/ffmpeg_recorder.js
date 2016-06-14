@@ -507,15 +507,15 @@ ffrec.prototype.attach = function (args, onDone) {
 
 				} else if (that.snapshot_queue[that.snapshot_queue.length-1] !== path.resolve(args.dir, filename)) {
 
-					LOG.warn("that.snapshot_queue[that.snapshot_queue.length-1]");
-					LOG.warn(that.snapshot_queue[that.snapshot_queue.length-1]);
-					LOG.warn("filename");
-					LOG.warn(filename);
+					//LOG.sys("that.snapshot_queue[that.snapshot_queue.length-1]");
+					//LOG.sys(that.snapshot_queue[that.snapshot_queue.length-1]);
+					//LOG.sys("filename");
+					//LOG.sys(filename);
 
 					that.snapshot_queue.push(path.resolve(args.dir, filename));
 				}
 				if (that.snapshot_queue.length > 11) {
-					LOG.warn(that.snapshot_queue);
+					//LOG.sys(that.snapshot_queue);
 					var knock_out = that.snapshot_queue.shift();
 					fs.stat(knock_out, function (err, stat) {
 						if (!err) {
