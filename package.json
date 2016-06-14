@@ -1,6 +1,6 @@
 {
   "name": "scalra-video",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "video module for the scalra framework",
   "main": "index.js",
   "scripts": {
