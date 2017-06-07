@@ -57,7 +57,10 @@ var l_createRecorder = function (streamObj, vid) {
 	var filepath = l_filePath + vid;
 	
 	// ensure directory exists for this particular stream to record	
-	UTIL.validatePath(filepath);
+	if (UTIL.validatePath(filepath) === false) {
+		LOG.error(filepath + ' cannot be created', l_name)
+		return undefined;
+	}
 
 	// build file name
 	var fid = parseInt(UTIL.getDateTimeString(), 10);
